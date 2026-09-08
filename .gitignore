@@ -1,0 +1,4 @@
+# Ignore Streamlit secrets so they never go to GitHub
+.streamlit/secrets.toml
+__pycache__/
+.env

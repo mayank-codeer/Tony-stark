@@ -250,7 +250,7 @@ if uploaded_file is not None:
                     """
 
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash", contents=[image, prompt]
+                        model="gemini-3.6-flash", contents=[image, prompt]
                     )
 
                     st.success("Analysis Complete & Verified!")

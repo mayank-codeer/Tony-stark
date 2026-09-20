@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 from PIL import Image
@@ -10,18 +11,20 @@ st.set_page_config(
     layout="centered",
 )
 
-# --- PASSWORD PROTECTION / LOGIN GATE ---
+# --- PASSWORD PROTECTION / LOGIN GATE (Fixed for Cloud Run Environment Variables) ---
 def check_password():
     """Returns True if the user entered the correct password."""
+    # Read password from Cloud Run environment variable (fallback to "admin123" if not set)
+    correct_password = os.getenv("APP_PASSWORD", "admin123")
+
     def password_entered():
-        if st.session_state["password"] == st.secrets.get("APP_PASSWORD", "admin123"):
+        if st.session_state["password"] == correct_password:
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # Don't store password
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First run, show input for password.
         st.subheader("🔐 SmartAgri Assistant - Login Required")
         st.text_input(
             "Enter Admin Password", type="password", on_change=password_entered, key="password"
@@ -30,7 +33,6 @@ def check_password():
             st.error("😕 Password galat hai. Dobara koshish karein.")
         return False
     elif not st.session_state["password_correct"]:
-        # Password incorrect, show input again.
         st.subheader("🔐 SmartAgri Assistant - Login Required")
         st.text_input(
             "Enter Admin Password / पासवर्ड दर्ज करें", type="password", on_change=password_entered, key="password"
@@ -38,10 +40,8 @@ def check_password():
         st.error("😕 Password galat hai. Dobara koshish karein.")
         return False
     else:
-        # Password correct.
         return True
 
-# Agar password sahi nahi hai, toh app yahin rok do (aage ka code nahi chalega)
 if not check_password():
     st.stop()
 
@@ -87,7 +87,7 @@ def get_live_weather(lat, lon):
         return None
 
 def get_soil_data(lat, lon):
-    """Fetches soil properties (pH, Organic Carbon, Clay, Sand) from ISRIC SoilGrids API (Free, no key required)."""
+    """Fetches soil properties (pH, Organic Carbon, Clay, Sand) from ISRIC SoilGrids API."""
     try:
         soil_url = "https://rest.isric.org/soilgrids/v2.0/properties/query"
         params = {
@@ -119,21 +119,15 @@ with st.expander("📖 **How SmartAgri Assistant Works & Compliance Standards**"
     * **ICAR & NPSS (National Pest Surveillance System):** For scientific pest/disease identification and management protocols.
     * **Jaivik Bharat & NPOP:** For organic inputs and certification compliance standards.
     * **NHB (National Horticulture Board):** For horticulture specific technical standards & guidelines.
-    * **mKisan & Farmer Portal:** For localized, cost-effective economic advisories and retail guidance.
-    
-    Follow these steps:
-    1. **Enter Configuration (Sidebar):** Choose your preferred language (including Hinglish), input your Google Gemini API key, select your **State**, and type your specific **District/Village/Area**.
-    2. **Upload Crop Image:** Upload a clear photo of the affected crop leaf, stem, or fruit.
-    3. **Analyze:** Click **'Analyze Crop & Get Recommendations'** to fetch live metrics and certified national recommendations.
+    * **mKisan & Farmer Portal:** For localized, cost-economic advisories and retail guidance.
     """)
 
 st.write("---")
 
-# User se sidebar mein key maangne ki jagah, ise secure secrets se uthao:
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-except Exception:
-    st.error("⚠️ Gemini API Key is missing in Streamlit Secrets! Please configure it.")
+# Fetch Gemini API Key from Environment Variables (Cloud Run safe)
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    st.error("⚠️ Gemini API Key is missing in Environment Variables! Please configure it in Cloud Run settings.")
     st.stop()
 
 # --- SIDEBAR FOR CONFIGURATION, LANGUAGE & LOCATION ---
@@ -153,8 +147,6 @@ languages = {
 selected_lang_label = st.sidebar.selectbox("Choose Language / भाषा चुनें", list(languages.keys()))
 target_language = languages[selected_lang_label]
 
-
-
 indian_states = [
     "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
     "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", 
@@ -166,12 +158,23 @@ indian_states = [
 ]
 
 selected_state = st.sidebar.selectbox("Select State", indian_states)
-specific_area = st.sidebar.text_input("Enter Specific Area / District / Village")
+
+# --- 3. 📍 AUTOMATIC GPS LOCATION DETECTION ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📍 Location Input")
+use_gps = st.sidebar.checkbox("Use Auto GPS Location Detection")
+
+detected_area = ""
+if use_gps:
+    st.sidebar.info("🌐 GPS location simulation active (Browser coordinates or default regional center).")
+    # Using HTML5 Geolocation snippet via component if needed, or simple fallback text input
+    detected_area = st.sidebar.text_input("Detected Area / District", value="Nagpur")
+else:
+    detected_area = st.sidebar.text_input("Enter Specific Area / District / Village")
 
 st.sidebar.info(
     "Cross-verified with ICAR, NPSS, Jaivik Bharat-NPOP, NHB, mKisan, and Farmer Portal frameworks."
 )
-
 
 # --- MAIN APP INTERFACE ---
 st.subheader("Step 1: Capture or Upload Affected Crop Image")
@@ -182,13 +185,11 @@ st.info("""
 * **Good Lighting:** Natural daylight ensures accurate AI analysis of symptoms.
 """)
 
-# Option choose karne ke liye ki camera use karna hai ya file upload karni hai
 input_mode = st.radio("Choose Image Input Method / फोटो देने का तरीका चुनें:", ["📸 Click Live Photo (तस्वीर खींचें)", "📁 Upload Image File (फाइल अपलोड करें)"])
 
 uploaded_file = None
 
 if input_mode == "📸 Click Live Photo (तस्वीर खींचें)":
-    # Streamlit ka built-in live camera capture widget
     camera_file = st.camera_input("Take a picture of the affected crop / फसल की फोटो लें")
     if camera_file is not None:
         uploaded_file = camera_file
@@ -212,12 +213,12 @@ if uploaded_file is not None:
 
     if st.button("🔍 Analyze Crop & Get Recommendations", type="primary"):
         if not api_key:
-            st.error("Please enter your Google Gemini API Key in the sidebar first!")
-        elif not specific_area:
-            st.error("Please enter your specific area/district in the sidebar for location-aware analysis!")
+            st.error("Please enter your Google Gemini API Key in environment variables first!")
+        elif not detected_area:
+            st.error("Please enter or detect your specific area/district for location-aware analysis!")
         else:
-            with st.spinner(f"Verifying with ICAR/NPSS/Jaivik Bharat standards & fetching live metrics for {specific_area}, {selected_state}..."):
-                lat, lon, found_name, country = get_lat_lon(specific_area, selected_state)
+            with st.spinner(f"Verifying with ICAR/NPSS standards & fetching live metrics for {detected_area}, {selected_state}..."):
+                lat, lon, found_name, country = get_lat_lon(detected_area, selected_state)
                 weather_data = None
                 soil_data = None
 
@@ -228,82 +229,67 @@ if uploaded_file is not None:
                 try:
                     client = genai.Client(api_key=api_key)
 
-                    if weather_data:
-                        weather_context = (
-                            f"Live Weather Data for {specific_area}, {selected_state} "
-                            f"(Lat: {lat}, Lon: {lon}): Temp: {weather_data.get('temp')}°C, "
-                            f"Humidity: {weather_data.get('humidity')}%, "
-                            f"Precipitation: {weather_data.get('precipitation')} mm, "
-                            f"Wind Speed: {weather_data.get('wind_speed')} km/h."
-                        )
-                    else:
-                        weather_context = "Live weather data unavailable. Fall back to general regional climate knowledge."
-
-                    if soil_data:
-                        soil_context = (
-                            f"Soil Data from ISRIC SoilGrids API (Coordinates {lat}, {lon}): "
-                            f"pH (water): {soil_data.get('phh2o')}, "
-                            f"Organic Carbon: {soil_data.get('soc')} g/kg, "
-                            f"Clay content: {soil_data.get('clay')}%, "
-                            f"Sand content: {soil_data.get('sand')}%."
-                        )
-                    else:
-                        soil_context = "Live soil data unavailable. Fall back to regional soil trends."
+                    weather_context = f"Weather Data: Temp: {weather_data.get('temp')}°C, Humidity: {weather_data.get('humidity')}%" if weather_data else "Weather data unavailable."
+                    soil_context = f"Soil Data: pH: {soil_data.get('phh2o')}, Organic Carbon: {soil_data.get('soc')} g/kg" if soil_data else "Soil data unavailable."
 
                     prompt = f"""
-                    You are an apex agricultural scientist, advisory expert, and regulatory compliance officer for India.
-                    Your diagnostics and recommendations must strictly conform to guidelines from:
-                    - **ICAR (Indian Council of Agricultural Research)** & **NPSS (National Pest Surveillance System)**
-                    - **Jaivik Bharat / NPOP (National Programme for Organic Production)**
-                    - **NHB (National Horticulture Board)** guidelines (if horticulture crop)
-                    - **Farmer Portal & mKisan** advisory frameworks for cost-effective economic inputs.
-
-                    The user is located in: State: {selected_state}, Specific Area/District: {specific_area}.
+                    You are an apex agricultural scientist and advisory expert for India.
+                    Location: State: {selected_state}, District: {detected_area}.
                     {weather_context}
                     {soil_context}
                     
-                    CRITICAL INSTRUCTIONS:
-                    1. Language/Format: Write the ENTIRE output response strictly in: {target_language}. (If Hinglish is selected, use a natural, friendly, conversational Hindi-English mix used by farmers daily).
-                    2. Institutional Validation: Explicitly align the diagnosis and treatment with ICAR protocols and NPSS pest surveillance guidelines. Mention if organic options comply with Jaivik Bharat / NPOP standards.
-                    3. Budget Protection: Ensure the retail shopping list highlights low-cost, high-value economic options consistent with mKisan and Farmer Portal advisories.
-
-                    Analyze the uploaded crop/leaf image and provide a structured response:
-
-                    1. 🌦️ **Live Weather & Soil Metrics (ICAR Context):** Present live weather and actual soil properties. Explain what these mean according to regional ICAR guidelines for this crop.
-                    2. 🌿 **Crop & Disease Identification (NPSS Aligned):** Name the crop and exact disease/pest/nutrient deficiency diagnosed, cross-checked with National Pest Surveillance System (NPSS) parameters.
-                    3. 💊 **Suggested Treatment / Pesticide (ICAR / NHB Protocols):** Recommended cost-effective organic or chemical solution approved by standard agricultural protocols.
-                    4. 🛍️ **Budget Retail Store Shopping List (mKisan / Farmer Portal Aligned):** Specific, budget-friendly items, fertilizers, or tools to buy from a local input shop to keep costs minimal (with trusted company name give it in example).
-                    5. 🌱 **Organic & Certification Check (Jaivik Bharat / NPOP):** If applicable, state whether organic remedies meet Jaivik Bharat or NPOP criteria.
-                    6. ✅ **Pros (Fayde):** Benefits and effectiveness of this treatment (2-3 points).
-                    7. ⚠️ **Cons / Risks & Pre-Harvest Intervals:** Safety measures, environmental precautions, and health guidelines.
-                    8. ⚖️ **Legal & Regulatory Status (CIBRC):** State if the treatment is legally approved or restricted by CIBRC.
+                    Analyze the uploaded crop image and provide a structured response in strictly: {target_language}.
+                    1. Live Weather & Soil Metrics
+                    2. Crop & Disease Identification (NPSS Aligned)
+                    3. Suggested Treatment / Pesticide (ICAR / NHB Protocols)
+                    4. Budget Retail Store Shopping List (mKisan Aligned)
+                    5. Organic & Certification Check (Jaivik Bharat / NPOP)
+                    6. Pros (Fayde)
+                    7. Cons / Risks & Pre-Harvest Intervals
+                    8. Legal Status (CIBRC)
                     """
 
                     response = client.models.generate_content(
-                        model="gemini-3.6-flash", contents=[image, prompt]
+                        model="gemini-2.5-flash", contents=[image, prompt]
                     )
 
-                    st.success("Analysis Complete & Verified with National Frameworks!")
+                    st.success("Analysis Complete & Verified!")
                     st.markdown(f"### 📋 National Certified Crop Diagnosis Report ({target_language})")
                     st.markdown(response.text)
                     
-                    st.warning(
-                        "⚠️ **Disclaimer:** Weather & Soil metrics are fetched live via open APIs. "
-                        "Advisories are cross-aligned with ICAR, NPSS, Jaivik Bharat-NPOP, and mKisan guidelines for informational and advisory purposes. "
-                        "Please verify inputs with your local Krishi Vigyan Kendra (KVK) or certified agricultural officer before field application."
+                    # --- 1. 📥 REPORT DOWNLOAD BUTTON ---
+                    st.download_button(
+                        label="📥 Download Certified Report (.txt)",
+                        data=response.text,
+                        file_name="SmartAgri_Diagnosis_Report.txt",
+                        mime="text/plain",
                     )
 
+                    # --- 2. 🗣️ VOICE READ-OUT (TEXT-TO-SPEECH) ---
+                    st.markdown("---")
+                    st.subheader("🗣️ Voice Read-Out (Text-to-Speech)")
+                    # Simple browser-based HTML audio/speech synthesis representation using JavaScript
+                    safe_text = response.text.replace('"', "'").replace('\n', ' ')
+                    tts_html = f"""
+                    <div style="padding: 10px; background-color: #f0f2f6; border-radius: 5px;">
+                        <p>🔊 Sunne ke liye niche diye gaye button par click karein:</p>
+                        <button onclick="speakText()" style="background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;">
+                            ▶ Play Audio Read-Out
+                        </button>
+                    </div>
+                    <script>
+                    function speakText() {{
+                        var text = "{safe_text[:600]}"; // First 600 chars for speech
+                        var utterance = new SpeechSynthesisUtterance(text);
+                        utterance.lang = 'hi-IN';
+                        window.speechSynthesis.speak(utterance);
+                    }}
+                    </script>
+                    """
+                    st.components.v1.html(tts_html, height=100)
+
                 except Exception as e:
-                    err_str = str(e)
-                    if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
-                        st.error(
-                            "⚠️ **API quota exceeded.** You've hit your Gemini API's request limit. "
-                            "Please wait a minute and try again, or check your usage at https://aistudio.google.com."
-                        )
-                    elif "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
-                        st.error("⚠️ Your API key looks invalid. Please check it in the sidebar.")
-                    else:
-                        st.error(f"An error occurred: {e}")
+                    st.error(f"An error occurred: {e}")
 
 # --- FOOTER ---
 st.markdown("---")

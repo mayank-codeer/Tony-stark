@@ -128,11 +128,10 @@ with st.expander("📖 **How SmartAgri Assistant Works & Compliance Standards**"
 
 st.write("---")
 
-# API Key ko secrets se uthana
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-except Exception:
-    st.error("⚠️ Gemini API Key is missing in Streamlit Secrets! Please configure it in .streamlit/secrets.toml.")
+# API Key ko Cloud Run Environment Variables se uthana
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    st.error("⚠️ Gemini API Key is missing in Environment Variables! Please configure it in Cloud Run.")
     st.stop()
 
 # --- SIDEBAR FOR CONFIGURATION, LANGUAGE & LOCATION ---
@@ -274,7 +273,7 @@ if uploaded_file is not None:
                     """
 
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash", contents=[image, prompt]
+                        model="gemini-3.6-flash", contents=[image, prompt]
                     )
 
                     st.success("Analysis Complete & Verified with National Frameworks!")

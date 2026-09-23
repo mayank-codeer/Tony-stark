@@ -9,7 +9,7 @@ To provide Indian farmers with instant, accurate, and location-aware crop diseas
 - Extension workers seeking quick reference guides.
 
 ## Core Features
-1. **Secure Admin Login:** Password protection via Streamlit Secrets.
+1. **Secure Admin Login: Password protection via environment variables (Google Cloud) with Streamlit Secrets as fallback — never hardcoded.
 2. **AI Vision Diagnosis:** Powered by Google Gemini to detect plant diseases, pests, and nutrient deficiencies from uploaded photos or live camera captures.
 3. **Live Weather Tracking:** Real-time temperature, humidity, wind speed, and precipitation via Open-Meteo API.
 4. **Soil Property Mapping:** Hyper-local soil pH, organic carbon, clay, and sand content via ISRIC SoilGrids API.
